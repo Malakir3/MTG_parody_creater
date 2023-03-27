@@ -1,0 +1,290 @@
+Option Explicit
+    Dim cardListFirstRow As Long
+    Dim cardListLastRow As Long
+    Dim wb As Workbook
+    Dim wsD As Worksheet
+    Dim wsP As Worksheet
+    Const wbName As String = "【編集用】母音検索プログラム" & ".xlsm"
+
+'Webスクレイピング処理（フェイズ１）
+Sub getInfoFromWisdomGuild()
+    Set wb = Workbooks(wbName)
+    Set wsD = wb.Worksheets("データベース")
+    
+    Dim objIE As InternetExplorer
+    Dim cardName As String
+    Dim i As Long, j As Long
+    Dim k As Integer
+    Dim cardAry() As Variant
+    Dim editionAry As Variant
+    Dim cardClassNum As Long
+    Dim openUrl As String
+    Dim wsdLastRow As Long
+    
+    Set objIE = Nothing '消してもいいかも
+    Set objIE = New InternetExplorer
+    'IEを見えるようにする
+    objIE.Visible = True
+    
+    editionAry = Array("Invasion", "ConspiracyTaketheCrown", "Conspiracy", "Archenemy", "ArchenemyNicolBolas", "Battlebond", "Jumpstart", "Commander2017", "Commander2018", "Commander2019", "Commander2020", _
+    "CommanderLegends", "Commander2021", "Commander2016", "Commander2015", "Commander2014", "Commander2013", "Commander", "Planechase2012Edition", "Planechase", "MastersEditionIV", "MastersEditionIII", "MastersEditionII" _
+    , "MastersEdition", "Renaissance", "Chronicles", "ModernMasters", "ModernMasters2015Edition", "EternalMasters", "ModernMasters2017Edition", "IconicMasters", "Masters25", "UltimateMasters", _
+    , "ModernHorizons", "DoubleMasters", "TimeSpiralRemastered", "ModernHorizons2", "ZendikarRisingExpeditions", "ZendikarRisingCommander", "KaldheimCommander", "StrixhavenMysticalArchive", "Portal", "PortalSecondAge", _
+    "PortalThreeKingdoms", "Starter1999", "Starter2000")
+    
+    For k = 0 To UBound(editionAry) 'エディションの数だけ繰り返し
+        'エディションを特定
+        openUrl = "http://whisper.wisdom-guild.net/cardlist/" & editionAry(k) & "/"
+        
+        '処理対象のエディションのURLを開く
+        'If k = 0 Then
+            objIE.navigate openUrl
+        'Else
+            'Call ieNavi(objIE, openUrl) '同じブラウザ上で開く
+        'End
+        
+        '準備ができるまでコードを止める
+        Do While objIE.Busy = True Or objIE.readyState <> 4
+            DoEvents
+        Loop
+        
+        '"card"クラスの要素数を取得
+        cardClassNum = objIE.document.getElementsByClassName("card").Length
+    
+        'カード名を取得して、card配列に格納
+        For i = 0 To cardClassNum - 1
+            cardName = objIE.document.getElementsByClassName("card")(i).outerText
+            ReDim Preserve cardAry(1, i) '縦2要素（漢字カード名とひらがなカード名）、横i要素
+            
+            Dim slashNum As Integer, leftParNum As Integer, rightParNum As Integer
+            '区切り位置を計算
+            slashNum = InStr(cardName, "/")
+            leftParNum = InStr(cardName, "（")
+            rightParNum = InStr(cardName, "）")
+            
+            ' 配列に格納
+            cardAry(0, i) = Left(cardName, slashNum - 1)
+            cardAry(1, i) = Mid(cardName, leftParNum + 1, rightParNum - leftParNum - 1)
+        Next i
+        
+         '以降、objIEは使わないのでメモリ開放
+        'Set objIE = Nothing
+        
+        'wsDの最終行の行数を取得
+        wsdLastRow = wsD.Cells(Rows.Count, 2).End(xlUp).Row
+        'card配列をシートに転記
+        wsD.Range(wsD.Cells(wsdLastRow + 1, 2), wsD.Cells(wsdLastRow + cardClassNum, 3)) = WorksheetFunction.Transpose(cardAry)
+        'エディション情報もついでに追記
+        wsD.Range(wsD.Cells(wsdLastRow + 1, 1), wsD.Cells(wsdLastRow + cardClassNum, 1)) = editionAry(k)
+    Next k
+    '以降、objIEは使わないのでメモリ開放
+    Set objIE = Nothing
+End Sub
+
+' ひらがなをローマ字に変換（フェイズ２）
+Sub convHtoR()
+    Dim wsP As Worksheet
+    Dim startRow As Long, endRow As Long
+    Dim convAry() As Variant
+    Dim i As Long, j As Long
+    Dim wsDStartRow As Long, wsDEndRow As Long
+    Dim wsP2StartRow As Long, wsP2EndRow As Long
+    Dim convRange As String
+    
+    Set wb = Workbooks(wbName)
+    Set wsD = wb.Worksheets("データベース")
+    Set wsP = wb.Worksheets("母音変換表")
+    
+    '変換する最初&最後の行を取得
+    wsDStartRow = wsD.Cells(Rows.Count, 4).End(xlUp).Offset(1, 0).Row
+    wsDEndRow = wsD.Cells(Rows.Count, 3).End(xlUp).Row
+    wsP2StartRow = wsP.Cells(1, 1).Row
+    wsP2EndRow = wsP.Cells(Rows.Count, 1).End(xlUp).Row
+    
+    'ひらがなの状態で、一旦配列に格納
+    ReDim convAry(wsDEndRow - wsDStartRow, 0)
+    convAry() = wsD.Range(Cells(wsDStartRow, 3), Cells(wsDEndRow, 3))
+    
+    '配列内で置換
+    For i = 1 To wsDEndRow - wsDStartRow + 1 ' iは1からで良い。　iは最大2万個ぐらい。
+        For j = wsP2StartRow To wsP2EndRow ' jは75個ぐらい
+            convAry(i, 1) = Replace(convAry(i, 1), wsP.Cells(j, 1), wsP.Cells(j, 2)) 'ひとつの配列の要素について、ひらがなをローマ字に置換
+        Next j
+    Next i
+    
+    '置換後の配列をシートに転記
+    wsD.Range(wsD.Cells(wsDStartRow, 4), wsD.Cells(wsDEndRow, 4)) = convAry
+    
+    MsgBox "完了しました"
+End Sub
+
+' ローマ字から母音を抽出（フェイズ３）
+Sub convRtoB()
+    Dim i As Long, j As Long
+    Dim delLetAry As Variant
+    Dim strWord As String, searchLet As String
+    
+    Set wb = Workbooks(wbName)
+    Set wsD = wb.Worksheets("データベース")
+    Set wsP = wb.Worksheets("母音変換表")
+    
+    cardListLastRow = wsD.Cells(Rows.Count, 1).End(xlUp).Row
+    delLetAry = Array("b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", "p", "q", "r", "s", "t", "v", "w", "x", "y", "z", "-", ",", "゛")
+    
+    For i = 2 To cardListLastRow
+        strWord = wsD.Cells(i, 4)
+        For j = 0 To UBound(delLetAry)
+             strWord = Replace(strWord, delLetAry(j), "")
+        Next j
+        wsD.Cells(i, 5) = strWord
+    Next i
+    MsgBox "完了しました"
+End Sub
+
+' ローマ字から母音を抽出（フェイズ３、「ん」あり）
+Sub convRtoBincludingN()
+    Dim i As Long, j As Long
+    Dim delLetAry As Variant
+    Dim strWord As String, searchLet As String
+    
+    Set wb = Workbooks(wbName)
+    Set wsD = wb.Worksheets("データベース")
+    Set wsP = wb.Worksheets("母音変換表")
+    
+    cardListLastRow = wsD.Cells(Rows.Count, 1).End(xlUp).Row
+    delLetAry = Array("b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", "p", "q", "r", "s", "t", "v", "w", "x", "y", "z", "-", ",", "゛")
+    
+    For i = 2 To cardListLastRow
+        strWord = wsD.Cells(i, 4)
+        For j = 0 To UBound(delLetAry)
+            strWord = Replace(strWord, "nn", "N") 'nnを保護
+            strWord = Replace(strWord, delLetAry(j), "")
+            strWord = Replace(strWord, "N", "nn") 'Nを脱保護
+        Next j
+        wsD.Cells(i, 6) = strWord
+    Next i
+    MsgBox "完了しました"
+End Sub
+
+'母音抽出機能（フェイズ３？）
+Function exAIUEO(ByVal word As String) As String '「ん」は削除するパターン
+    Dim x As Long
+    Dim delLetAry As Variant
+    
+    delLetAry = Array("b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", "p", "q", "r", "s", "t", "v", "w", "x", "y", "z", "-", ",")
+    
+    For x = 0 To UBound(delLetAry)
+          word = Replace(word, delLetAry(x), "")
+    Next x
+    exAIUEO = word
+End Function
+
+Function exAIUEON(ByVal argWord As String) As String '「ん」は残すパターン
+    '①nnをNに置換して保護する
+        argWord = Replace(argWord, "nn", "N")
+    '②通常の置換
+        argWord = exAIUEO(argWord)
+    '③Nを脱保護してnnにする
+        exAIUEON = Replace(argWord, "N", "nn")
+End Function
+
+'検索（メイン）処理（フェイズ４）
+Sub searchPro()
+    Dim wsS As Worksheet
+    Dim searchWord As String
+    Dim searchListAry() As Variant
+    Dim resultAry() As Variant
+    Dim k As Long, m As Long, x As Long
+    Dim searchLet As String
+    Dim cardListTitleCell As Range, resultTitleCell As Range
+    Dim cardListFirstRow As Long, cardListLastRow As Long
+    Dim resultFirstRow As Long, resultLastRow As Long
+    Dim resultVarietyNum As Integer
+    Dim startNum As Integer
+    Dim y As Long
+    Dim judgeN As Integer
+    
+    Set wb = Workbooks(wbName)
+    Set wsS = wb.Worksheets("検索シート")
+    Set wsD = wb.Worksheets("データベース")
+    
+    Application.EnableEvents = False
+    
+    If wsS.Cells(4, 2).Value = "yes" Then '「ん」を考慮する場合、ビットを立てておく
+        judgeN = 1
+    End If
+    
+    '出力する結果項目数(日本語名、ローマ字、母音、母音文字数)
+    resultVarietyNum = 4
+    
+    '検索ワードを取得
+    searchWord = wsS.Cells(1, 2)
+    If judgeN = 1 Then
+        searchLet = exAIUEON(searchWord)
+    Else
+        searchLet = exAIUEO(searchWord)
+    End If
+    wsS.Cells(2, 2) = searchLet
+    
+    'タイトルセル位置を取得
+    Set cardListTitleCell = wsD.Cells(1, 1)
+    Set resultTitleCell = wsS.Cells(1, 4)
+    
+    '各列データの先頭行、最終行を取得
+    cardListFirstRow = cardListTitleCell.Offset(1, 0).Row
+    cardListLastRow = wsD.Cells(Rows.Count, 1).End(xlUp).Row
+    resultFirstRow = resultTitleCell.Offset(1, 0).Row
+    resultLastRow = wsS.Cells(Rows.Count, 4).End(xlUp).Row
+    
+    'cardリストの最終行を取得できたので、検索リスト配列を再定義
+    ReDim searchListAry(cardListLastRow - 2, 2)
+    
+    '前回検索結果があれば削除
+    If wsS.Cells(resultFirstRow, 4) <> "" Then
+        wsS.Range(wsS.Cells(resultFirstRow, 4), wsS.Cells(resultLastRow, 7)).Clear
+    End If
+    
+    'あいまい検索し、一致する単語を結果配列に格納
+    m = -1
+    For k = 0 To cardListLastRow - 2
+        searchListAry(k, 0) = wsD.Cells(k + 2, 2).Value '日本語名
+        searchListAry(k, 1) = wsD.Cells(k + 2, 4).Value 'ローマ字
+        searchListAry(k, 2) = wsD.Cells(k + 2, 5 + judgeN).Value ' 母音（「ん」を考慮に入れない場合は5行目、入れる場合は6行目を取得）
+        If searchListAry(k, 2) Like "*" + searchLet + "*" Then
+            m = m + 1
+            ReDim Preserve resultAry(resultVarietyNum - 1, m)
+            resultAry(0, m) = searchListAry(k, 0) '日本語名
+            resultAry(1, m) = searchListAry(k, 1) 'ローマ字
+            resultAry(2, m) = searchListAry(k, 2) '母音
+            resultAry(3, m) = Len(searchListAry(k, 2)) '母音文字数
+        End If
+    Next k
+    
+    '結果配列をシートに反映
+    With wsS
+        If m > -1 Then
+            .Range(.Cells(resultFirstRow, 4), .Cells(m + 2, 7)) = WorksheetFunction.Transpose(resultAry)
+            .Range(.Cells(resultFirstRow - 1, 4), .Cells(m + 2, 7)).Sort _
+                key1:=.Cells(1, 7), order1:=xlAscending, Header:=xlYes '検索結果を文字が短い順に整列
+            .Cells(3, 2) = m + 1 '検索ヒット数をシートに反映
+        Else
+            MsgBox "一致するカードはありません"
+            Application.EnableEvents = True
+            Exit Sub
+        End If
+    
+        '結果がシートに反映されることで、結果の最終行が変わったので、resultLastRowを再定義
+        resultLastRow = wsS.Cells(Rows.Count, 4).End(xlUp).Row
+        
+        '母音が一致する箇所に色を付ける
+        For y = resultFirstRow To resultLastRow
+            '母音が一致する文字の開始位置が何文字目かを判定
+            startNum = InStr(wsS.Cells(y, 6), searchLet)
+            '文字を着色
+            wsS.Range(wsS.Cells(y, 6), wsS.Cells(y, 6)).Characters(Start:=startNum, Length:=Len(searchLet)).Font.ColorIndex = 3
+        Next y
+    End With
+    
+    Application.EnableEvents = True
+End Sub
+
