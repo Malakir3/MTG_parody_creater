@@ -1,0 +1,2 @@
+# MTG_parody_creater
+MTGカード名を用いた替え歌作成ツール
