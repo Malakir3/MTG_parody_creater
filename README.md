@@ -7,7 +7,7 @@ MTG_parody_creater（MTG替え歌作成ツール）
 
 ※MTGとは、Magic: The Gatheringというトレーディングカードゲームです。[（Wizards of the Coast社 製品ホームページ）](https://magic.wizards.com/ja)
 
-![cards](images/cards.jpg)
+![cards](images/cards.png)
 
 # 言語
 - VBA
